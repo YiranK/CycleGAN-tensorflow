@@ -44,17 +44,22 @@ class cyclegan(object):
         self.real_data = tf.placeholder(tf.float32,
                                         [None, self.image_size, self.image_size,
                                          self.input_c_dim + self.output_c_dim],
-                                        name='real_A_and_B_images')
+                                        name='real_A_and_B_images') # real A is concated by syndata and mask
 
-        self.real_A = self.real_data[:, :, :, :self.input_c_dim]
+        self.real_A = self.real_data[:, :, :, :self.input_c_dim-1]
         self.real_B = self.real_data[:, :, :, self.input_c_dim:self.input_c_dim + self.output_c_dim]
+        self.mask_A = tf.expand_dims(self.real_data[:,:,:,self.input_c_dim-1],3) # the last channel of A is mask
 
         self.fake_B = self.generator(self.real_A, self.options, False, name="generatorA2B")
-        self.fake_A_ = self.generator(self.fake_B, self.options, False, name="generatorB2A")
+        self.fake_B_mul_mask = tf.multiply(self.fake_B, self.mask_A)+tf.multiply(self.real_A, 1-self.mask_A)
+        self.fake_A_ = self.generator(self.fake_B_mul_mask, self.options, False, name="generatorB2A") # fake_B -> fake_B_mul_mask
+        print self.input_c_dim,self.input_c_dim+self.output_c_dim
+        print self.fake_B_mul_mask, self.fake_A_, self.real_B, self.real_A, self.mask_A
         self.fake_A = self.generator(self.real_B, self.options, True, name="generatorB2A")
         self.fake_B_ = self.generator(self.fake_A, self.options, True, name="generatorA2B")
 
-        self.DB_fake = self.discriminator(self.fake_B, self.options, reuse=False, name="discriminatorB")
+        self.fake_B_cat_mask = tf.concat([self.fake_B, self.mask_A], 3)
+        self.DB_fake = self.discriminator(self.fake_B_mul_mask, self.options, reuse=False, name="discriminatorB") # fake_B -> fake_B_cat_mask
         self.DA_fake = self.discriminator(self.fake_A, self.options, reuse=False, name="discriminatorA")
         self.g_loss_a2b = self.criterionGAN(self.DB_fake, tf.ones_like(self.DB_fake)) \
             + self.L1_lambda * abs_criterion(self.real_A, self.fake_A_) \
@@ -69,10 +74,11 @@ class cyclegan(object):
 
         self.fake_A_sample = tf.placeholder(tf.float32,
                                             [None, self.image_size, self.image_size,
-                                             self.input_c_dim], name='fake_A_sample')
+                                             self.input_c_dim-1], name='fake_A_sample')
         self.fake_B_sample = tf.placeholder(tf.float32,
                                             [None, self.image_size, self.image_size,
                                              self.output_c_dim], name='fake_B_sample')
+        print self.fake_A_sample,self.fake_B_sample,self.real_B, self.real_A
         self.DB_real = self.discriminator(self.real_B, self.options, reuse=True, name="discriminatorB")
         self.DA_real = self.discriminator(self.real_A, self.options, reuse=True, name="discriminatorA")
         self.DB_fake_sample = self.discriminator(self.fake_B_sample, self.options, reuse=True, name="discriminatorB")
@@ -105,7 +111,7 @@ class cyclegan(object):
 
         self.test_A = tf.placeholder(tf.float32,
                                      [None, self.image_size, self.image_size,
-                                      self.input_c_dim], name='test_A')
+                                      self.input_c_dim-1], name='test_A')
         self.test_B = tf.placeholder(tf.float32,
                                      [None, self.image_size, self.image_size,
                                       self.output_c_dim], name='test_B')
@@ -140,7 +146,7 @@ class cyclegan(object):
 
         for epoch in range(args.epoch):
             dataA = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/trainA'))
-            dataB = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/trainB'))
+            dataB = glob('./datasets/{}/background_*/*.*'.format(self.dataset_dir + '/trainB'))
             np.random.shuffle(dataA)
             np.random.shuffle(dataB)
             batch_idxs = min(min(len(dataA), len(dataB)), args.train_size) // self.batch_size
@@ -206,21 +212,32 @@ class cyclegan(object):
 
     def sample_model(self, sample_dir, epoch, idx):
         dataA = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/testA'))
-        dataB = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/testB'))
+        dataB = glob('./datasets/{}/background_*/*.*'.format(self.dataset_dir + '/testB'))
         np.random.shuffle(dataA)
         np.random.shuffle(dataB)
         batch_files = list(zip(dataA[:self.batch_size], dataB[:self.batch_size]))
         sample_images = [load_train_data(batch_file, is_testing=True) for batch_file in batch_files]
         sample_images = np.array(sample_images).astype(np.float32)
 
-        fake_A, fake_B = self.sess.run(
-            [self.fake_A, self.fake_B],
+        fake_A, fake_B, fake_B_mul_mask, real_A, real_B, mask_A = self.sess.run(
+            [self.fake_A, self.fake_B, self.fake_B_mul_mask, self.real_A, self.real_B, self.mask_A],
             feed_dict={self.real_data: sample_images}
         )
+        print "fake_B", fake_B
+        print "real_A", real_A
         save_images(fake_A, [self.batch_size, 1],
-                    './{}/A_{:02d}_{:04d}.jpg'.format(sample_dir, epoch, idx))
+                    './{}/{:02d}_{:04d}_fakeA.jpg'.format(sample_dir, epoch, idx))
         save_images(fake_B, [self.batch_size, 1],
-                    './{}/B_{:02d}_{:04d}.jpg'.format(sample_dir, epoch, idx))
+                    './{}/{:02d}_{:04d}_fakeB.jpg'.format(sample_dir, epoch, idx))
+        save_images(fake_B_mul_mask, [self.batch_size, 1],
+                    './{}/{:02d}_{:04d}_maskA+B.jpg'.format(sample_dir, epoch, idx))
+        save_images(real_A, [self.batch_size, 1],
+                    './{}/{:02d}_{:04d}_realA.jpg'.format(sample_dir, epoch, idx))
+        save_images(real_B, [self.batch_size, 1],
+                    './{}/{:02d}_{:04d}_realB.jpg'.format(sample_dir, epoch, idx))
+        save_images(mask_A, [self.batch_size, 1],
+                    './{}/{:02d}_{:04d}_maskA.jpg'.format(sample_dir, epoch, idx))
+
 
     def test(self, args):
         """Test cyclegan"""
