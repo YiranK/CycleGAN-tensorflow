@@ -7,6 +7,8 @@ import random
 
 GMUfore_dir='./GMUforePatch/'
 GMUback_dir='./GMUbackPatch/'
+GMUmask_dir='./GMUmaskPatch/'
+GMUgt_dir='./GMUgtPatch/'
 count = 0
 with open("./localGMU_train.txt") as f:
     while True:
@@ -15,6 +17,7 @@ with open("./localGMU_train.txt") as f:
         if line == '':
             break
         if count < 20472:
+        # if count < 23635:
             continue
         if line.find('.png')>-1:
             #foreground = np.zeros((1080,1920,3))
@@ -27,7 +30,8 @@ with open("./localGMU_train.txt") as f:
             t = int(t)
             print img_name, t
             for i in range(t):
-                temp = img.copy()
+                gt_tmp = img.copy()
+                fore_tmp = img.copy()
                 bbox = f.readline().strip().split(' ')
                 bbox = bbox[-4:]
                 int_bbox = [int(x) for x in bbox]
@@ -45,28 +49,43 @@ with open("./localGMU_train.txt") as f:
                 while w > patch_size or h > patch_size:
                     patch_size += 64
 
+                gt = np.zeros((patch_size, patch_size, 3))
                 fore = np.zeros((patch_size, patch_size, 3))
                 back = np.zeros((patch_size, patch_size, 3))
+                mask = np.zeros((patch_size, patch_size))
                 pad_w = patch_size - w
                 pad_h = patch_size - h
 
-                pad_left = min(random.randint(0, pad_w),xmin)
-                pad_right = pad_w - pad_left
-                pad_up = min(random.randint(0, pad_h),ymin)
-                pad_bottom = pad_h - pad_up
+                if xmin < 1920-xmax:
+                    pad_left = random.randint(0, min(pad_w, xmin))
+                    pad_right = pad_w - pad_left
+                else:
+                    pad_right = random.randint(0, min(pad_w, 1920 - xmax))
+                    pad_left = pad_w - pad_right
+
+                if ymin < 1080-ymax:
+                    pad_up = random.randint(0, min(pad_h, ymin))
+                    pad_bottom = pad_h - pad_up
+                else:
+                    pad_bottom = random.randint(0, min(pad_h, 1080 - ymax))
+                    pad_up = pad_h - pad_bottom
 
                 pad_xmin = xmin - pad_left
                 pad_xmax = xmax + pad_right
                 pad_ymin = ymin - pad_up
                 pad_ymax = ymax + pad_bottom
 
-                fore[pad_up:pad_up+h,pad_left:pad_left+w] = temp[ymin:ymax,xmin:xmax] # only for bounding box
-                back = temp[pad_ymin:pad_ymax,pad_xmin:pad_xmax]
+                gt = gt_tmp[pad_ymin:pad_ymax,pad_xmin:pad_xmax]
+                fore[pad_up:pad_up+h,pad_left:pad_left+w] = fore_tmp[ymin:ymax,xmin:xmax] # only for bounding box
+                mask[pad_up:pad_up+h,pad_left:pad_left+w] = 1
+                back = gt.copy()
                 back[pad_up:patch_size-pad_bottom,pad_left:patch_size-pad_right] = 0
 
                 if w > 256 or h > 256:
+                    gt = scipy.misc.imresize(gt, [256,256])
                     fore = scipy.misc.imresize(fore,[256,256])
                     back = scipy.misc.imresize(back,[256,256])
+                    mask = scipy.misc.imresize(mask,[256,256])
 
 
                 nm = random.randint(0, 2)
@@ -77,6 +96,8 @@ with open("./localGMU_train.txt") as f:
                 fore = exposure.adjust_gamma(fore, degree)
                 scipy.misc.imsave(GMUfore_dir + img_name[:-4] + '_box' + str(i) + '_fore.png', fore)
                 scipy.misc.imsave(GMUback_dir + img_name[:-4] + '_box' + str(i) + '_back.png', back)
+                scipy.misc.imsave(GMUmask_dir + img_name[:-4] + '_box' + str(i) + '_mask.png', mask)
+                scipy.misc.imsave(GMUgt_dir + img_name[:-4] + '_box' + str(i) + '_gt.png', gt)
 
                 # foreground[ymin:ymax,xmin:xmax] = temp[ymin:ymax,xmin:xmax]
                 # background[ymin:ymax,xmin:xmax] = 0
