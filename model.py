@@ -49,7 +49,7 @@ class cyclegan(object):
         self.real_A_with_mask = self.real_data[:, :, :, :self.input_c_dim] # RGB A with its Mask
         self.real_A = self.real_data[:, :, :, :self.input_c_dim-1]
         self.real_B = self.real_data[:, :, :, self.input_c_dim:self.input_c_dim + self.output_c_dim]
-        self.mask_A = tf.expand_dims(self.real_data[:,:,:,self.input_c_dim],3) # the last channel of A is mask
+        self.mask_A = tf.expand_dims(self.real_data[:,:,:,self.input_c_dim-1],3) # the last channel of A is mask
 
         self.fake_B = self.generator(self.real_A_with_mask, self.options, False, name="generatorA2B")
         #self.fake_B_mul_mask = tf.multiply(self.fake_B, self.mask_A)+tf.multiply(self.real_A, 1-self.mask_A)
@@ -139,7 +139,7 @@ class cyclegan(object):
 
         init_op = tf.global_variables_initializer()
         self.sess.run(init_op)
-        self.writer = tf.summary.FileWriter("./logs/a_with_mask_0321", self.sess.graph)
+        self.writer = tf.summary.FileWriter("./logs/a_with_all_1_mask_0321", self.sess.graph)
 
         counter = 1
         start_time = time.time()
@@ -229,8 +229,8 @@ class cyclegan(object):
             [self.fake_A, self.fake_B, self.real_A, self.real_B, self.mask_A, self.all_1_mask, self.fake_A_with_all_1_mask],
             feed_dict={self.real_data: sample_images}
         )
-        print "mask_A", mask_A.shape, mask_A
-        print "all_1_mask", all_1_mask.shape, all_1_mask
+        #print "mask_A", mask_A.shape, mask_A
+        #print "all_1_mask", all_1_mask.shape, all_1_mask
         print "fake_A_with_all_1_mask", fake_A_with_all_1_mask.shape
         save_images(fake_A, [self.batch_size, 1],
                     './{}/{:02d}_{:04d}_fakeA.jpg'.format(sample_dir, epoch, idx))

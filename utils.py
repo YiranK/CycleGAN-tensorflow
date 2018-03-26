@@ -72,7 +72,7 @@ def load_train_data(image_path, load_size=286, fine_size=256, is_testing=False):
         img_B = scipy.misc.imresize(img_B, [fine_size, fine_size])
 
     img_A = img_A/127.5 - 1.
-    mask_A = mask_A/127.5
+    mask_A = mask_A/255
     img_B = img_B/127.5 - 1.
 
     mask_A = np.expand_dims(mask_A, axis=2)
